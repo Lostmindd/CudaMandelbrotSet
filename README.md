@@ -8,9 +8,9 @@ The **CUDA** and **SDL2** libraries are used to render interactive visualization
 ### Example Render
 *Here's an example of what the Mandelbrot set might look like after rendering.*
 
-![Mandelbrot Set Example1](./images/1.png)
-![Mandelbrot Set Example2](./images/2.png)
-![Mandelbrot Set Example3](./images/3.png)
+![Mandelbrot Set Example1](./Images/1.png)
+![Mandelbrot Set Example2](./Images/2.png)
+![Mandelbrot Set Example3](./Images/3.png)
 
 ---
 
