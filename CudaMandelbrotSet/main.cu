@@ -10,9 +10,9 @@
 
 SDL_Window* window = nullptr;
 SDL_Renderer* renderer = nullptr;
+SDL_Texture* texture = nullptr;
 
-
-// Инициализирует окно и рендерер
+// Инициализирует окно, рендерер и текстуру
 bool initWindow()
 {
     bool ok = true;
@@ -34,6 +34,12 @@ bool initWindow()
         ok = false;
     }
 
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
+    if (!texture)
+    {
+        ok = false;
+    }
+
     return ok;
 }
 
@@ -41,8 +47,8 @@ bool initWindow()
 __device__ Uint8 getMandelbrotColor(double x, double y)
 {
     double z1 = 0, z2 = 0;
-    #pragma unroll 4
-    for (Uint8 step = 0; step < 100; ++step) 
+    #pragma unroll 16
+    for (Uint8 step = 0; step < 100; ++step)
     {
         double new_z1 = z1 * z1 - z2 * z2 + x;
         double new_z2 = 2 * z1 * z2 + y;
@@ -54,7 +60,7 @@ __device__ Uint8 getMandelbrotColor(double x, double y)
     return 255;
 }
 
-__global__ void computeMandelbrot(Uint8* colors, double min_x, double min_y, const double x_diff, const double y_diff)
+__global__ void computeMandelbrot(Uint8* __restrict__ colors, double min_x, double min_y, const double x_diff, const double y_diff)
 {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -73,25 +79,35 @@ void renderMandelbrotSet(double min_x, double max_x, double min_y, double max_y)
     const double x_diff = (max_x - min_x) / SCREEN_WIDTH;
     const double y_diff = (max_y - min_y) / SCREEN_HEIGHT;
 
-    Uint8* colors;
-    cudaMallocManaged(&colors, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(Uint8));
+    Uint8* device_colors;
+    cudaMalloc((void**)&device_colors, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(Uint8));
 
-    dim3 blockSize(16, 16); 
-    dim3 gridSize((SCREEN_WIDTH + 15) / 16, (SCREEN_HEIGHT + 15) / 16); 
-    computeMandelbrot <<<gridSize, blockSize>>> (colors, min_x, min_y, x_diff, y_diff);
-    cudaDeviceSynchronize();
+    dim3 blockSize(16, 16);
+    dim3 gridSize((SCREEN_WIDTH + 15) / 16, (SCREEN_HEIGHT + 15) / 16);
+    computeMandelbrot <<<gridSize, blockSize >>> (device_colors, min_x, min_y, x_diff, y_diff);
 
-    // заполнение пикселей экрана вычисленными цветами
+    Uint32* pixels = nullptr;
+    int pitch;
+    SDL_LockTexture(texture, nullptr, (void**)&pixels, &pitch);
+
+    Uint8* host_colors = new Uint8[SCREEN_WIDTH * SCREEN_HEIGHT];
+    cudaMemcpy(host_colors, device_colors, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(Uint8), cudaMemcpyDeviceToHost);
+
+    #pragma omp parallel for colapse(2)
     for (int i = 0; i < SCREEN_HEIGHT; i++) {
         for (int j = 0; j < SCREEN_WIDTH; j++) {
-            Uint8 color = colors[i * SCREEN_WIDTH + j];
-            SDL_SetRenderDrawColor(renderer, (color * 5) % 256, (color * 7) % 256, (color * 11) % 256, 255);
-            SDL_RenderDrawPoint(renderer, j, i);
+            Uint8 color = host_colors[i * SCREEN_WIDTH + j];
+            Uint32 pixelColor = 0xFF000000 | ((color * 5) % 256 << 16) | ((color * 7) % 256 << 8) | ((color * 11) % 256);
+            pixels[i * (pitch / 4) + j] = pixelColor;
         }
     }
 
+    SDL_UnlockTexture(texture);
+    SDL_RenderCopy(renderer, texture, nullptr, nullptr);
     SDL_RenderPresent(renderer);
-    cudaFree(colors);
+
+    cudaFree(device_colors);
+    delete[] host_colors;
 }
 
 int main(int argc, char* argv[])
@@ -100,7 +116,6 @@ int main(int argc, char* argv[])
     SDL_Init(SDL_INIT_EVERYTHING);
     initWindow();
 
-    // отрезки на которых генерируется множество Мандельброта и шаг передвижения/увеличения
     double curent_min_x = -1, curent_max_x = 1, curent_min_y = -1, curent_max_y = 1;
     double curent_move_step = (curent_max_x - curent_min_x) / 10;
 
@@ -113,7 +128,6 @@ int main(int argc, char* argv[])
         {
             bool rerender_needed = false;
 
-            // приближение/отдаление
             if (SDL_MOUSEWHEEL == window_event.type)
             {
                 if (window_event.wheel.y == -1)
@@ -134,7 +148,6 @@ int main(int argc, char* argv[])
                 curent_move_step = (curent_max_x - curent_min_x) / 10;
             }
 
-            // передвижение на стрелочки
             if (SDL_KEYDOWN == window_event.type)
             {
                 if (window_event.key.keysym.sym == SDLK_UP) {
@@ -165,7 +178,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Очистка ресурсов
+    SDL_DestroyTexture(texture);
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);
     SDL_Quit();
