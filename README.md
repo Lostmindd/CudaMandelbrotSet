@@ -45,5 +45,3 @@ Ensure that the following software and dependencies are installed on your system
 ## Controls
 - **Arrow keys**: Move the view in the corresponding direction.
 - **Mouse wheel**: Zoom in and out of the fractal.
-
----
