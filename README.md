@@ -27,6 +27,8 @@ CudaMandelbrotSet 1920 1080
 ```
 This command will render the Mandelbrot set in a 1920x1080 window.
 
+When run as a normal executable file, the window will have a resolution of 1024x640.
+
 ---
 
 ### Prerequisites
@@ -45,3 +47,4 @@ Ensure that the following software and dependencies are installed on your system
 ## Controls
 - **Arrow keys**: Move the view in the corresponding direction.
 - **Mouse wheel**: Zoom in and out of the fractal.
+- **Escape**: Exit the program.
